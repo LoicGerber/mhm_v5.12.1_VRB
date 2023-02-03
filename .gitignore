@@ -1,7 +1,6 @@
 # Created by .ignore support plugin (hsz.mobi)
 
 # build related
-forces/
 build/
 release/
 debug/
@@ -17,7 +16,6 @@ latex
 doxygen_warn.txt
 
 # Exclusions
-mhm
 !pybind/mhm
 mhm_debug
 mhm_mpi
