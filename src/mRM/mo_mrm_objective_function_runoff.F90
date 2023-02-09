@@ -14,7 +14,7 @@
 !! 2.  SO: Q:        1.0 - lnNSE
 !! 3.  SO: Q:        1.0 - 0.5*(NSE+lnNSE)
 !! 4.  SO: Q:       -1.0 * loglikelihood with trend removed from absolute errors and then lag(1)-autocorrelation removed
-!! 5.  SO: Q:        ((1-NSE)**6+(1-lnNSE)**6)**(1/6)
+!! 5.  SO: Q:        ((1-NSE)**2+(1-lnNSE)**2)**(1/2)
 !! 6.  SO: Q:        SSE
 !! 7.  SO: Q:       -1.0 * loglikelihood with trend removed from absolute errors
 !! 8.  SO: Q:       -1.0 * loglikelihood with trend removed from the relative errors and then lag(1)-autocorrelation removed
@@ -157,8 +157,8 @@ CONTAINS
         single_objective_runoff = - loglikelihood_stddev(parameterset, eval, 1.0_dp)
       end if
     case (5)
-      ! ((1-NSE)**6+(1-lnNSE)**6)**(1/6)
-      single_objective_runoff = objective_power6_nse_lnnse(parameterset, eval)
+      ! ((1-NSE)**2+(1-lnNSE)**2)**(1/2), changed by Loïc Gerber 01.2023
+      single_objective_runoff = objective_power2_nse_lnnse(parameterset, eval)
     case (6)
       ! SSE
       single_objective_runoff = objective_sse(parameterset, eval)
@@ -305,8 +305,8 @@ CONTAINS
     case (4)
       call error_message("case 4, loglikelihood_stddev not implemented in parallel yet")
     case (5)
-      ! ((1-NSE)**6+(1-lnNSE)**6)**(1/6)
-      call message('objective_power6_nse_lnnse = ', num2str(single_objective_runoff_master))
+      ! ((1-NSE)**2+(1-lnNSE)**2)**(1/2)
+      call message('objective_power2_nse_lnnse = ', num2str(single_objective_runoff_master))
     case (6)
       ! SSE
       call message('objective_sse = ', num2str(single_objective_runoff_master))
@@ -429,8 +429,8 @@ CONTAINS
           partial_single_objective_runoff = - loglikelihood_stddev(parameterset, eval, 1.0_dp)
         end if
       case (5)
-        ! ((1-NSE)**6+(1-lnNSE)**6)**(1/6)
-        partial_single_objective_runoff = objective_power6_nse_lnnse(parameterset, eval)
+        ! ((1-NSE)**2+(1-lnNSE)**2)**(1/2)
+        partial_single_objective_runoff = objective_power2_nse_lnnse(parameterset, eval)
       case (6)
         ! SSE
         partial_single_objective_runoff = objective_sse(parameterset, eval)
@@ -1957,7 +1957,7 @@ CONTAINS
   ! ------------------------------------------------------------------
 
   !    NAME
-  !        objective_power6_nse_lnnse
+  !        objective_power2_nse_lnnse
 
   !    PURPOSE
   !>       \brief Objective function of combined NSE and lnNSE with power of 5
@@ -1981,7 +1981,7 @@ CONTAINS
   !>       \param[in] "procedure(eval_interface) :: eval"
 
   !    RETURN
-  !>       \return real(dp) :: objective_power6_nse_lnnse &mdash; objective function value
+  !>       \return real(dp) :: objective_power2_nse_lnnse &mdash; objective function value
   !>       (which will be e.g. minimized by an optimization routine like DDS)
 
   !    HISTORY
@@ -1994,7 +1994,7 @@ CONTAINS
   ! Stephan Thober Aug 2015 - substituted nGaugesTotal variable with size(runoff, dim=2) to not interfere with mRM
   ! Robert Schweppe Jun 2018 - refactoring and reformatting
 
-  FUNCTION objective_power6_nse_lnnse(parameterset, eval)
+  FUNCTION objective_power2_nse_lnnse(parameterset, eval)
 
     use mo_errormeasures, only : lnnse, nse
 
@@ -2004,7 +2004,7 @@ CONTAINS
 
     procedure(eval_interface), INTENT(IN), pointer :: eval
 
-    real(dp) :: objective_power6_nse_lnnse
+    real(dp) :: objective_power2_nse_lnnse
 
     ! modelled runoff for a given parameter set
     ! dim1=nTimeSteps, dim2=nGauges
@@ -2024,32 +2024,33 @@ CONTAINS
     ! mask for measured runoff
     logical, dimension(:), allocatable :: runoff_obs_mask
 
-    real(dp), parameter :: onesixth = 1.0_dp / 6.0_dp
+    !real(dp), parameter :: onesixth = 1.0_dp / 6.0_dp
+    real(dp), parameter :: half = 1.0_dp / 2.0_dp
 
 
     call eval(parameterset, runoff = runoff)
     nGaugesTotal = size(runoff, dim = 2)
 
-    objective_power6_nse_lnnse = 0.0_dp
+    objective_power2_nse_lnnse = 0.0_dp
     do gg = 1, nGaugesTotal
       ! extract runoff
       call extract_runoff(gg, runoff, runoff_agg, runoff_obs, runoff_obs_mask)
       ! NSE + lnNSE
-      objective_power6_nse_lnnse = objective_power6_nse_lnnse + &
-              ((1.0_dp - nse(runoff_obs, runoff_agg, mask = runoff_obs_mask))**6 + &
-                      (1.0_dp - lnnse(runoff_obs, runoff_agg, mask = runoff_obs_mask))**6)**onesixth
+      objective_power2_nse_lnnse = objective_power2_nse_lnnse + &
+              ((1.0_dp - nse(runoff_obs, runoff_agg, mask = runoff_obs_mask))**2 + &
+                      (1.0_dp - lnnse(runoff_obs, runoff_agg, mask = runoff_obs_mask))**2)**half !onesixth
     end do
 #ifndef MPI
     ! objective function value which will be minimized
-    objective_power6_nse_lnnse = objective_power6_nse_lnnse / real(nGaugesTotal, dp)
+    objective_power2_nse_lnnse = objective_power2_nse_lnnse / real(nGaugesTotal, dp)
 
-    call message('objective_power6_nse_lnnse = ', num2str(objective_power6_nse_lnnse))
+    call message('objective_power2_nse_lnnse = ', num2str(objective_power2_nse_lnnse))
     ! pause
 #endif
 
     deallocate(runoff_agg, runoff_obs, runoff_obs_mask)
 
-  END FUNCTION objective_power6_nse_lnnse
+  END FUNCTION objective_power2_nse_lnnse
 
   ! ------------------------------------------------------------------
 

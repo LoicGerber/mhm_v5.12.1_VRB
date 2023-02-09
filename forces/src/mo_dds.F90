@@ -229,7 +229,7 @@ CONTAINS
     ! and Initialise the other variables (e.g. of_best)
     ! imaxit is 1.0 for MIN problems, -1 for MAX problems
     DDS = pini
-    print *, imaxit
+    print *, imaxit, '1.0 for MIN problems, -1 for MAX problems'
 #ifdef MPI
     call MPI_Comm_size(comm, nproc, ierror)
     do iproc = 1, nproc-1
@@ -256,6 +256,9 @@ CONTAINS
     ! Code below is now the DDS algorithm as presented in Figure 1 of Tolson and Shoemaker (2007)
 
     do i = 1, imaxiter - 1
+      print *,'--------------------------------------------------------------'
+      print *,'Iteration : ',i+1,'/',imaxiter,'...'
+      print *,'--------------------------------------------------------------'
       ! Determine Decision Variable (DV) selected for perturbation:
       Pn = 1.0_dp - log(real(i, dp)) / log(real(imaxiter - 1, dp)) ! probability each DV selected
       dvn_count = 0                                                 ! counter for how many DVs selected for perturbation

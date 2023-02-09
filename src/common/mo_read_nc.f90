@@ -282,7 +282,7 @@ contains
           call error_message('File: ', trim(fName), raise=.false.)
           call error_message('Maxval at timestep: ', trim(num2str(maxval(data(:, :, i)))), raise=.false.)
           call error_message('Total maxval: ', trim(num2str(maxval(data(:, :, :)))))
-          ! print*, data(:, :, i)
+           print*, data(:, :, i)
         end if
       end if
 
@@ -758,17 +758,22 @@ contains
     ! calculate input resolution
     allocate(time_diff(n_time - 1))
     time_diff = (time_data(2 : n_time) - time_data(1 : n_time - 1)) / int(DaySecs, i8)
+    ! print *, time_diff
     ! difference must be 1 day
     if (all(abs(time_diff - 1._dp) .lt. 1._dp)) then
+       print *, 'Daily input'
        inctimestep = -1 ! daily
     ! difference must be between 28 and 31 days
     else if (all(abs(time_diff) .lt. 32._dp) .and. all(abs(time_diff) .gt. 27._dp)) then
+       print *, 'Monthly input'
        inctimestep = -2 ! monthly
     ! difference must be between 365 and 366 days
     else if ((all(abs(time_diff) .lt. YearDays + 2)) .and. (all(abs(time_diff) .gt. YearDays - 1._dp))) then
+       print *, 'Yearly input'
        inctimestep = -3 ! yearly
     ! difference must be 1 hour
     else if (all(abs((time_data(2 : n_time) - time_data(1 : n_time - 1)) / 3600._dp - 1._dp) .lt. 1.e-6)) then
+       print *, 'Hourly input'
        inctimestep = -4 ! hourly
     else
        call error_message('***ERROR: read_forcing_nc: unknown nctimestep switch.')

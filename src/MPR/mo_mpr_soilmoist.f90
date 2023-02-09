@@ -677,21 +677,21 @@ contains
 
     ! hard coded limits, according to (Zacharias et al, 2007, soil Phy.)
     if (thetaS < 0.01_dp) then
-      call message('thetaS below threshold limit 1e-2, reset.')
+      !call message('thetaS below threshold limit 1e-2, reset.')
       ! Put constrains on theta_S
       thetaS = 0.01_dp
     end if
     if (thetaS > 1.0_dp) then
-      call message('thetaS above 1, reset.')
+      !call message('thetaS above 1, reset.')
       ! Put constrains on theta_S
       thetaS = 1.0_dp
     end if
     if (Genu_Mual_n < 1.01000_dp) then
-      call message('Genu_Mual_n below threshold limit 1.01, reset.')
+      !call message('Genu_Mual_n below threshold limit 1.01, reset.')
       Genu_Mual_n = 1.01000_dp
     end if
     if (Genu_Mual_alpha < 0.00001_dp) then
-      call message('Genu_Mual_alpha below threshold limit 1e-5, reset.')
+      !call message('Genu_Mual_alpha below threshold limit 1e-5, reset.')
       Genu_Mual_alpha = 0.00001_dp
     end if
 
@@ -763,7 +763,7 @@ contains
     Ks = param(4) * exp(X * log(Ks_c))
 
     if (Ks < 1.10_dp) then
-      call message('JMJMJM-Ks-BAD')
+      !call message('JMJMJM-Ks-BAD')
     end if
 
     ! minimum value of Ks = 1.1cm/d

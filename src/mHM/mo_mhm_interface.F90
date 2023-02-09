@@ -218,7 +218,7 @@ contains
             ! read optional spatio-temporal soil moisture and tws data
             call readOptidataObs(iDomain, domainID, L1_smObs(iDomain))
             call readOptidataObs(iDomain, domainID, L1_twsaObs(iDomain))
-          case(42, 49, 50, 59, 60)
+          case(42, 49, 50, 59 : 61)
             ! Added by Loïc Gerber, 12.12.2022
             ! read optional spatio-temporal evapotranspiration, soil moisture and tws data
             call readOptidataObs(iDomain, domainID, L1_etObs(iDomain))
@@ -397,7 +397,7 @@ contains
         call optimization(eval, obj_func, dirConfigOut, funcBest, maskpara)
 #endif
 
-      case(10 : 13, 15, 17, 27, 28, 29, 30, 33, 34, 40 : 60)
+      case(10 : 13, 15, 17, 27, 28, 29, 30, 33, 34, 40 : 61)
         ! call optimization for other variables
         obj_func => objective
 #ifdef MPI

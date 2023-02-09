@@ -418,7 +418,7 @@ CONTAINS
 
         !Read ET, SM, and TWS !added by Moctar Dembélé, 06.12.2018
         !Updated for mHM v5.12.1 by Loïc Gerber, 12.12.2022
-        case(42, 49, 50, 59, 60)
+        case(42, 49, 50, 59 : 61)
           print*, 'Optional data loaded: ET + SM + TWSA'
           ! evapotranspiration
           call position_nml('optional_data', unamelist)

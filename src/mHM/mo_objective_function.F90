@@ -219,6 +219,9 @@ CONTAINS
     case (60) !added by Loïc Gerber, 01.2023
       !OF = [KGE_Q**2 + SPEM_TWSA**2 + SPEM_ET**2 + SPEM_SM**2]**(1/2)
       objective = objective_kge_q_spem_twsa_et_sm(parameterset, eval)
+    case (61) !added by Loïc Gerber, 02.2023
+      !OF = [SPEM_TWSA**2 + SPEM_ET**2 + SPEM_SM**2]**(1/2)
+      objective = objective_spem_twsa_et_sm(parameterset, eval)
 
     case default
       call error_message("Error objective: opti_function not implemented yet.")
@@ -315,7 +318,7 @@ CONTAINS
 
     call distribute_parameterset(parameterset)
     select case (opti_function)
-    case (10 : 13, 17, 27 : 29, 40 : 60)
+    case (10 : 13, 17, 27 : 29, 40 : 61)
       call MPI_Comm_size(domainMeta%comMaster, nproc, ierror)
       objective_master = 0.0_dp
       do iproc = 1, nproc - 1
@@ -407,6 +410,8 @@ CONTAINS
       call message('    objective_nse_lnnse_q_spem_twsa_et_sm = ', num2str(objective_master, '(F9.5)'))
     case(60) ! Added by Loïc Gerber 01.2023
       call message('    objective_kge_q_spem_twsa_et_sm = ', num2str(objective_master, '(F9.5)'))
+    case(61) ! Added by Loïc Gerber 02.2023
+      call message('    objective_spem_twsa_et_sm = ', num2str(objective_master, '(F9.5)'))
     case default
       call error_message("Error objective_master: opti_function not implemented yet, this part of the code should never execute.")
     end select
@@ -575,12 +580,14 @@ CONTAINS
         partial_objective = objective_nse_lnnse_q_spem_twsa_et_sm(parameterset, eval)
       case(60) !Added by Loïc Gerber 01.2023
         partial_objective = objective_kge_q_spem_twsa_et_sm(parameterset, eval)
+      case(61) !Added by Loïc Gerber 02.2023
+        partial_objective = objective_spem_twsa_et_sm(parameterset, eval)
       case default
         call error_message("Error objective_subprocess: opti_function not implemented yet.")
       end select
 
       select case (opti_function)
-      case (10 : 13, 17, 27 : 29, 40 : 60)
+      case (10 : 13, 17, 27 : 29, 40 : 61)
         call MPI_Send(partial_objective,1, MPI_DOUBLE_PRECISION,0,0,domainMeta%comMaster,ierror)
       case(33)
         call MPI_Send(multiple_partial_objective, 6, MPI_DOUBLE_PRECISION,0,0,domainMeta%comMaster,ierror)
@@ -6747,7 +6754,7 @@ CONTAINS
 	
     deallocate(kge_domain_et)
 
-    call message('   objective_spaceKGE_et (i.e., 1 - KGE)  = ', num2str(objective_spaceKGE_et, '(F9.5)'))
+    call message('   objective_spaceKGE_et (i.e., 1 - KGE) = ', num2str(objective_spaceKGE_et, '(F9.5)'))
 
   END FUNCTION objective_spaceKGE_et
 
@@ -7321,12 +7328,12 @@ CONTAINS
     do iDomain = 1, domainMeta%nDomains
 
       ! allocate
-      allocate(mask_times_et (size(etOptiSim (iDomain)%dataSim, dim = 2)))
-      allocate(mask_times_sm (size(smOptiSim (iDomain)%dataSim, dim = 2)))
+      allocate(mask_times_et  (size(etOptiSim (iDomain)%dataSim, dim = 2)))
+      allocate(mask_times_sm  (size(smOptiSim (iDomain)%dataSim, dim = 2)))
       allocate(mask_times_twsa(size(twsOptiSim(iDomain)%dataSim, dim = 2)))
-      allocate(spem_time_et (size(etOptiSim (iDomain)%dataSim, dim = 2)))
-      allocate(spem_time_sm (size(smOptiSim (iDomain)%dataSim, dim = 2)))
-      allocate(spem_time_twsa(size(twsOptiSim(iDomain)%dataSim, dim = 2)))
+      allocate(spem_time_et   (size(etOptiSim (iDomain)%dataSim, dim = 2)))
+      allocate(spem_time_sm   (size(smOptiSim (iDomain)%dataSim, dim = 2)))
+      allocate(spem_time_twsa (size(twsOptiSim(iDomain)%dataSim, dim = 2)))
 
       ! init
       mask_times_et  = .TRUE.
@@ -7877,7 +7884,293 @@ CONTAINS
                                                  num2str(objective_kge_q_spem_twsa_et_sm, '(F9.5)'))
 
   END FUNCTION objective_kge_q_spem_twsa_et_sm
+  
 
+  ! -----------------------------------------------------------------
+
+  !    NAME
+  !        objective_spem_twsa_et_sm 
+
+  !    PURPOSE
+  !>       \brief Objective function for evapotranspiration, soil moisture
+            ! and terrestrial water storage anomaly (twsa).
+			!OF = sqrt(SPEM(TWSA)**2 + SPEM(ET)**2 + SPEM(SM)**2) 
+
+  !>       \details ...TO BE COMPLETED.
+  !>       \it is assumed that optional data for optimization are monthly data.
+  
+  ! added by Loïc Gerber, 02.2023
+  
+  FUNCTION objective_spem_twsa_et_sm(parameterset, eval)
+
+    use mo_optimization_types, only : optidata_sim
+    use mo_common_variables, only : domainMeta
+    use mo_common_constants, only : eps_dp, nodata_dp
+    use mo_common_mhm_mrm_variables, only : evalPer
+    use mo_global_variables, only : L1_etObs, L1_smObs, L1_twsaObs
+    use mo_message, only : message
+    use mo_string_utils, only : num2str
+    use mo_julian, only : caldat
+    use mo_moment, only : mean
+    use mo_standard_score, only : classified_standard_score
+    use mo_temporal_aggregation, only : day2mon_average
+    use mo_spem, only : spem
+
+    implicit none
+
+    real(dp), dimension(:), intent(in) :: parameterset
+
+    procedure(eval_interface), INTENT(IN), POINTER :: eval
+
+    real(dp) :: objective_spem_twsa_et_sm 
+	
+    real(dp) :: objective_spem_et
+    real(dp) :: objective_spem_sm
+    real(dp) :: objective_spem_twsa
+    real(dp) :: spem_et_avg
+    real(dp) :: spem_sm_avg
+    real(dp) :: spem_twsa_avg
+
+    ! number of invalid times in catchment
+    real(dp) :: invalid_times
+
+    ! modelled runoff for a given parameter set
+    ! dim1=nTimeSteps, dim2=nGauges
+    real(dp), allocatable, dimension(:, :) :: runoff
+
+    ! domain loop counter
+    integer(i4) :: iDomain, domainID
+
+    ! time loop counter
+    integer(i4) :: iTime
+
+    ! mask for valid time steps per cell
+    logical, dimension(:), allocatable :: mask_times_et
+    logical, dimension(:), allocatable :: mask_times_sm
+    logical, dimension(:), allocatable :: mask_times_twsa
+    
+    ! domains wise objectives per time step
+    real(dp), dimension(:), allocatable :: spem_time_et
+    real(dp), dimension(:), allocatable :: spem_time_sm
+    real(dp), dimension(:), allocatable :: spem_time_twsa
+
+    ! domains wise objectives for each domain	
+    real(dp), dimension(:), allocatable :: spem_domain_twsa
+    real(dp), dimension(:), allocatable :: spem_domain_et
+    real(dp), dimension(:), allocatable :: spem_domain_sm
+
+    ! simulated evapotranspiration, soil moisture and terrestrial water storage
+    type(optidata_sim), dimension(:), allocatable :: etOptiSim
+    type(optidata_sim), dimension(:), allocatable :: smOptiSim
+    type(optidata_sim), dimension(:), allocatable :: twsOptiSim
+
+    ! month counters
+    integer(i4) :: pp, mmm
+
+    integer(i4) :: year, month, day
+
+    real(dp), dimension(domainMeta%nDomains) :: initTime
+	
+    ! total number of months
+    integer(i4) :: nMonths_et
+    integer(i4) :: nMonths_sm
+    integer(i4) :: nMonths_twsa
+
+    ! run mHM
+    allocate(etOptiSim (domainMeta%nDomains))
+    allocate(smOptiSim (domainMeta%nDomains))
+    allocate(twsOptiSim(domainMeta%nDomains))
+    call eval(parameterset, etOptiSim = etOptiSim)
+    call eval(parameterset, smOptiSim = smOptiSim, twsOptiSim = twsOptiSim)
+
+    ! -------------------------------------------
+    ! EVAPOTRANSPIRATION + SOIL MOISTURE + TWSA
+    ! -------------------------------------------
+
+    ! initialize some variables
+    allocate(spem_domain_et  (domainMeta%nDomains))
+    allocate(spem_domain_sm  (domainMeta%nDomains))
+    allocate(spem_domain_twsa(domainMeta%nDomains))
+    spem_domain_et(:) = nodata_dp
+    spem_domain_sm(:) = nodata_dp
+    spem_domain_twsa(:) = nodata_dp
+    spem_et_avg = 0.0_dp
+    spem_sm_avg = 0.0_dp
+    spem_twsa_avg = 0.0_dp
+
+    ! loop over domain - for applying power law later on
+    do iDomain = 1, domainMeta%nDomains
+
+      ! allocate
+      allocate(mask_times_et  (size(etOptiSim (iDomain)%dataSim, dim = 2)))
+      allocate(mask_times_sm  (size(smOptiSim (iDomain)%dataSim, dim = 2)))
+      allocate(mask_times_twsa(size(twsOptiSim(iDomain)%dataSim, dim = 2)))
+      allocate(spem_time_et   (size(etOptiSim (iDomain)%dataSim, dim = 2)))
+      allocate(spem_time_sm   (size(smOptiSim (iDomain)%dataSim, dim = 2)))
+      allocate(spem_time_twsa (size(twsOptiSim(iDomain)%dataSim, dim = 2)))
+
+      ! init
+      mask_times_et  = .TRUE.
+      mask_times_sm  = .TRUE.
+      mask_times_twsa = .TRUE.
+      spem_time_et   = nodata_dp
+      spem_time_sm   = nodata_dp
+      spem_time_twsa  = nodata_dp
+	  
+      ! --------------------
+      !  EVAPOTRANSPIRATION
+      ! --------------------
+      ! spem is calculated for every time step
+      invalid_times = 0.0_dp
+      nMonths_et = size(etOptiSim(iDomain)%dataSim, dim = 2)
+
+      ! spem is calculated for every time step
+      do iTime = 1, nMonths_et
+	  
+        ! check for enough data points in space for statistical calculations
+        if (all(.NOT. L1_etObs(iDomain)%maskObs(:, iTime))) then
+          invalid_times = invalid_times + 1.0_dp
+          mask_times_et(iTime) = .FALSE.
+          cycle
+        end if
+												  
+		! Calculate SPEM over all cells for every time step										  
+        spem_time_et(iTime) = spem(L1_etObs(iDomain)%dataObs(:, iTime), etOptiSim(iDomain)%dataSim(:, iTime), &
+                                                  mask = L1_etObs(iDomain)%maskObs(:, iTime))
+      end do
+
+      ! user information about invalid times
+      if (invalid_times .GT. 0.5_dp) then
+        call message('   WARNING: spem_time_et: Detected invalid times in study area (.LT. 10 valid data points).')
+        call message('                          Fraction of invalid times: ', &
+                num2str(invalid_times / real(nMonths_et, dp), '(F4.2)'))
+      end if
+
+	  ! calculate average spem for the domain	
+      spem_domain_et(iDomain) = sum(spem_time_et(:), abs(spem_time_et - nodata_dp) .gt. eps_dp) / &
+            real(count(abs(spem_time_et - nodata_dp) .gt. eps_dp), dp)
+	     
+	    ! --------------------
+      !  SOIL MOISTURE
+      ! --------------------	  
+      ! spem is calculated for every time step
+      invalid_times = 0.0_dp
+      nMonths_sm = size(smOptiSim(iDomain)%dataSim, dim = 2)
+	  
+      ! spem is calculated for every time step
+      do iTime = 1, nMonths_sm
+
+        ! check for enough data points in space for statistical calculations
+        if (all(.NOT. L1_smObs(iDomain)%maskObs(:, iTime))) then
+          invalid_times = invalid_times + 1.0_dp
+          mask_times_sm(iTime) = .FALSE.
+          cycle
+        end if
+
+		! Calculate SPEM over all cells for every time step										  
+        spem_time_sm(iTime) = spem(L1_smObs(iDomain)%dataObs(:, iTime), smOptiSim(iDomain)%dataSim(:, iTime), &
+                                                  mask = L1_smObs(iDomain)%maskObs(:, iTime))
+      end do
+
+      ! user information about invalid times
+      if (invalid_times .GT. 0.5_dp) then
+        call message('   WARNING: spem_time_sm: Detected invalid times in study area (.LT. 10 valid data points).')
+        call message('                          Fraction of invalid times: ', &
+                num2str(invalid_times / real(nMonths_sm, dp), '(F4.2)'))
+      end if
+
+	  ! calculate average spem for the domain	
+      spem_domain_sm(iDomain) = sum(spem_time_sm(:), abs(spem_time_sm - nodata_dp) .gt. eps_dp) / &
+            real(count(abs(spem_time_sm - nodata_dp) .gt. eps_dp), dp)
+			
+			
+      ! --------------------
+      !  TERRESTRIAL WATER STORAGE
+      ! --------------------	  
+      ! spem is calculated for every time step
+      invalid_times = 0.0_dp
+      nMonths_twsa = size(twsOptiSim(iDomain)%dataSim, dim = 2)
+	  
+      ! spem is calculated for every time step
+      do iTime = 1, nMonths_twsa
+
+        ! check for enough data points in space for statistical calculations
+        if (all(.NOT. L1_twsaObs(iDomain)%maskObs(:, iTime))) then
+          invalid_times = invalid_times + 1.0_dp
+          mask_times_twsa(iTime) = .FALSE.
+          cycle
+        end if
+
+		! Calculate SPEM over all cells for every time step										  
+        spem_time_twsa(iTime) = spem(L1_twsaObs(iDomain)%dataObs(:, iTime), twsOptiSim(iDomain)%dataSim(:, iTime), &
+                                                  mask = L1_twsaObs(iDomain)%maskObs(:, iTime))
+      end do
+
+      ! user information about invalid times
+      if (invalid_times .GT. 0.5_dp) then
+        call message('   WARNING: spem_time_twsa: Detected invalid times in study area (.LT. 10 valid data points).')
+        call message('                          Fraction of invalid times: ', &
+                num2str(invalid_times / real(nMonths_twsa, dp), '(F4.2)'))
+      end if
+
+	  ! calculate average spem for the domain	
+      spem_domain_twsa(iDomain) = sum(spem_time_twsa(:), abs(spem_time_twsa - nodata_dp) .gt. eps_dp) / &
+            real(count(abs(spem_time_twsa - nodata_dp) .gt. eps_dp), dp)
+
+      deallocate(mask_times_et)
+      deallocate(spem_time_et)
+      deallocate(mask_times_sm)
+      deallocate(spem_time_sm)
+      deallocate(mask_times_twsa)
+      deallocate(spem_time_twsa)
+
+      call etOptiSim(iDomain)%destroy()
+      call smOptiSim(iDomain)%destroy()
+      call twsOptiSim(iDomain)%destroy()
+    end do
+	
+	! et solution
+    objective_spem_et = 0.0_dp
+	
+    spem_et_avg = sum(spem_domain_et(:), abs(spem_domain_et - nodata_dp) .gt. eps_dp) / &
+            real(count(abs(spem_domain_et - nodata_dp) .gt. eps_dp), dp)
+			
+    objective_spem_et = 1.0_dp - spem_et_avg
+	
+	! sm solution
+    objective_spem_sm = 0.0_dp
+	
+    spem_sm_avg = sum(spem_domain_sm(:), abs(spem_domain_sm - nodata_dp) .gt. eps_dp) / &
+            real(count(abs(spem_domain_sm - nodata_dp) .gt. eps_dp), dp)
+			
+    objective_spem_sm = 1.0_dp - spem_sm_avg
+	
+	! twsa solution
+    objective_spem_twsa = 0.0_dp
+    
+    spem_twsa_avg = sum(spem_domain_twsa(:), abs(spem_domain_twsa - nodata_dp) .gt. eps_dp) / &
+            real(count(abs(spem_domain_twsa - nodata_dp) .gt. eps_dp), dp)
+    
+    objective_spem_twsa = 1.0_dp - spem_twsa_avg
+			
+    deallocate(spem_domain_et)
+    deallocate(spem_domain_sm)
+    deallocate(spem_domain_twsa)
+
+    !--------------------------------------------
+    !! COMBINED OF FOR SM + ET + TWSA
+    !--------------------------------------------
+    ! compromise objective functions for evapotranspiration, soil moisture and twsa
+    ! OF = sqrt(SPEM(TWSA)**2 + SPEM(ET)**2 + SPEM(SM)**2)
+    objective_spem_twsa_et_sm  = sqrt(objective_spem_twsa**2 + objective_spem_et**2 + objective_spem_sm**2)
+												
+    call message('        objective_spem_twsa (i.e., 1 - SPEM) = ', num2str(objective_spem_twsa, '(F9.5)'))
+    call message('          objective_spem_et (i.e., 1 - SPEM) = ', num2str(objective_spem_et, '(F9.5)'))
+    call message('          objective_spem_sm (i.e., 1 - SPEM) = ', num2str(objective_spem_sm, '(F9.5)'))
+    call message('       objective_final_spem_twsa_et_sm = ', & 
+                                                 num2str(objective_spem_twsa_et_sm, '(F9.5)'))
+
+  END FUNCTION objective_spem_twsa_et_sm
 
 
   subroutine create_domain_avg_tws(iDomain, twsOptiSim, tws_catch_avg_domain, &
